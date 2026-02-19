@@ -2,7 +2,6 @@
 import argparse
 from pathlib import Path
 
-
 PACK_TEMPLATE = """from typing import List
 
 from app.core.packs import ProductPack

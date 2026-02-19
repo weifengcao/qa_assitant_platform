@@ -2,7 +2,6 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 IntentValue = Literal["how_to", "stats", "security", "mixed"]
 
 

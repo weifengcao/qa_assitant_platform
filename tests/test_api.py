@@ -1,6 +1,5 @@
-from fastapi.testclient import TestClient
-
 from app.api import app
+from fastapi.testclient import TestClient
 
 
 def _headers(roles: str = "Viewer") -> dict[str, str]:

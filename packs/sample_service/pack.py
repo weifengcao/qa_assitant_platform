@@ -2,7 +2,9 @@ from typing import List
 
 from app.core.packs import ProductPack
 from app.core.tools import ToolDef
-from packs.sample_service.tools import stats_request_volume_24h, stats_p95_latency_24h
+
+from packs.sample_service.tools import stats_p95_latency_24h, stats_request_volume_24h
+
 
 class SampleServicePack(ProductPack):
     pack_id = "sample_service"

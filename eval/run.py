@@ -10,7 +10,6 @@ from app.core.policy import PolicyEngine
 from app.core.tools import ToolRegistry, ToolRunner
 from packs.sample_service.pack import SampleServicePack
 
-
 ROOT = Path(__file__).resolve().parents[1]
 EVAL_DIR = ROOT / "eval"
 

@@ -1,7 +1,6 @@
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-
 _TIMEFRAME_RE = re.compile(r"\b(?:last|past)?\s*(\d+)\s*(h|hr|hrs|hour|hours|d|day|days)\b", re.IGNORECASE)
 _SERVICE_RE = re.compile(r"\bservice\s+([a-zA-Z0-9_-]+)\b", re.IGNORECASE)
 _ENV_RE = re.compile(r"\b(?:sandbox|env|environment)\s+([a-zA-Z0-9_-]+)\b", re.IGNORECASE)

@@ -1,5 +1,6 @@
 from enum import Enum
 
+
 class Intent(str, Enum):
     HOW_TO = "how_to"
     STATS = "stats"
@@ -13,8 +14,11 @@ def classify_intent(message: str) -> Intent:
     sec = any(k in m for k in ["what can i access", "permission", "rbac", "roles", "access", "scope"])
     if sum([how, stats, sec]) >= 2:
         return Intent.MIXED
-    if how: return Intent.HOW_TO
-    if stats: return Intent.STATS
-    if sec: return Intent.SECURITY
+    if how:
+        return Intent.HOW_TO
+    if stats:
+        return Intent.STATS
+    if sec:
+        return Intent.SECURITY
     # default to how-to (most common)
     return Intent.HOW_TO

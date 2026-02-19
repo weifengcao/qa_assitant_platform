@@ -5,6 +5,7 @@ from app.core.docsources import DocSource, filesystem_source
 from app.core.policy import PolicyEngine
 from app.core.tools import ToolDef
 
+
 class ProductPack:
     pack_id: str
     display_name: str

@@ -1,5 +1,5 @@
 import re
-from typing import Dict, Any
+from typing import Any, Dict
 
 _EMAIL = re.compile(r"([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
 _LONG_ID = re.compile(r"\b([A-Fa-f0-9]{16,}|[A-Za-z0-9_-]{24,})\b")

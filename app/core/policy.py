@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 
 def _normalize_space(text: str) -> str:

@@ -1,5 +1,6 @@
-from typing import Dict, Any
 from datetime import datetime, timezone
+from typing import Any, Dict
+
 
 def stats_request_volume_24h(args: Dict[str, Any]) -> Dict[str, Any]:
     # Mocked metric

@@ -3,6 +3,7 @@ import time
 from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException
+from packs.sample_service.pack import SampleServicePack
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.audit_sinks import FileAuditSink, InMemoryAuditSink
@@ -13,8 +14,6 @@ from app.core.packs import PackRegistry
 from app.core.policy import PolicyEngine
 from app.core.schemas import ChatRequest, ChatResponse
 from app.core.tools import ToolRegistry, ToolRunner
-from packs.sample_service.pack import SampleServicePack
-
 
 app = FastAPI(title="Universal Q&A Assistant Platform (Baseline)")
 

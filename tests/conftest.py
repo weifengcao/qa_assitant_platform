@@ -1,5 +1,4 @@
 import pytest
-
 from app.core.audit_sinks import InMemoryAuditSink
 from app.core.doc_index import HybridDocIndex
 from app.core.orchestrator import Orchestrator

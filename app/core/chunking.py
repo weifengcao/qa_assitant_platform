@@ -2,7 +2,6 @@ import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-
 _HEADING_RE = re.compile(r"^(#{1,3})\s+(.+?)\s*$")
 
 

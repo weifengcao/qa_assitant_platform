@@ -11,8 +11,7 @@ from app.core.intent import Intent, classify_intent
 from app.core.packs import PackRegistry
 from app.core.policy import PolicyEngine
 from app.core.redaction import apply_redaction
-from app.core.tools import ToolDef
-from app.core.tools import ToolExecutionError, ToolRunner
+from app.core.tools import ToolDef, ToolExecutionError, ToolRunner
 
 _WORD_RE = re.compile(r"[a-z0-9_]+")
 
@@ -215,19 +214,19 @@ class Orchestrator:
                 "I can provide aggregate stats and how-to guidance instead."
             )
             answer = apply_redaction(answer, redaction_rules)
-            warnings = ["Request blocked by policy (deny_patterns)."]
+            deny_warnings = ["Request blocked by policy (deny_patterns)."]
             meta = self._build_meta(trace_id=trace_id, intent=Intent.SECURITY, packs_used=[], tool_calls=0)
             self._audit(trace_id, "denied", {"reason": "deny_patterns", "message_preview": message_preview})
             self._audit(
                 trace_id,
                 "response_returned",
-                {"intent": Intent.SECURITY.value, "citations": 0, "tool_calls": 0, "warnings": warnings},
+                {"intent": Intent.SECURITY.value, "citations": 0, "tool_calls": 0, "warnings": deny_warnings},
             )
             return {
                 "answer": answer,
                 "citations": [],
                 "actions": [],
-                "warnings": warnings,
+                "warnings": deny_warnings,
                 "meta": meta,
             }
 
