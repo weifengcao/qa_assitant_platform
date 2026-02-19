@@ -21,3 +21,25 @@ def test_match_pattern_supports_exact_and_wildcards() -> None:
     assert PolicyEngine.match_pattern("sample.stats.request_volume_24h", patterns)
     assert PolicyEngine.match_pattern("admin.read", patterns)
     assert not PolicyEngine.match_pattern("sample.tools.write", patterns)
+
+
+def test_filter_allowed_packs_and_tools() -> None:
+    engine = PolicyEngine(
+        {
+            "roles": {
+                "Viewer": {
+                    "allowed_packs": ["sample.*"],
+                    "allowed_tools": ["sample.stats.*"],
+                }
+            }
+        }
+    )
+
+    packs = engine.filter_allowed_packs(["sample_service", "admin_console"], roles=["Viewer"])
+    tools = engine.filter_allowed_tools(
+        ["sample.stats.request_volume_24h", "sample.tools.write"],
+        roles=["Viewer"],
+    )
+
+    assert packs == ["sample_service"]
+    assert tools == ["sample.stats.request_volume_24h"]

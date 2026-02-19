@@ -1,17 +1,28 @@
-from dataclasses import dataclass
-from typing import Dict, Any, List, Optional
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Dict
 
-@dataclass
+
+@dataclass(frozen=True)
 class AuditEvent:
+    timestamp: str
+    trace_id: str
     kind: str
-    data: Dict[str, Any]
+    data: Dict[str, Any] = field(default_factory=dict)
 
-class InMemoryAuditSink:
-    def __init__(self):
-        self._traces: Dict[str, List[Dict[str, Any]]] = {}
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "timestamp": self.timestamp,
+            "trace_id": self.trace_id,
+            "kind": self.kind,
+            "data": self.data,
+        }
 
-    def log(self, trace_id: str, event: AuditEvent) -> None:
-        self._traces.setdefault(trace_id, []).append({"kind": event.kind, "data": event.data})
 
-    def get(self, trace_id: str) -> Optional[List[Dict[str, Any]]]:
-        return self._traces.get(trace_id)
+def new_audit_event(trace_id: str, kind: str, data: Dict[str, Any]) -> AuditEvent:
+    return AuditEvent(
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        trace_id=trace_id,
+        kind=kind,
+        data=data,
+    )

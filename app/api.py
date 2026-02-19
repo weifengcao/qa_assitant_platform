@@ -5,11 +5,12 @@ from typing import Optional
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.orchestrator import Orchestrator
-from app.core.policy import PolicyEngine
-from app.core.packs import PackRegistry
-from app.core.audit import InMemoryAuditSink
+from app.core.audit_sinks import FileAuditSink, InMemoryAuditSink
 from app.core.doc_index import InMemoryDocIndex
+from app.core.orchestrator import Orchestrator
+from app.core.packs import PackRegistry
+from app.core.policy import PolicyEngine
+from app.core.schemas import ChatRequest, ChatResponse
 from app.core.tools import ToolRegistry, ToolRunner
 from packs.sample_service.pack import SampleServicePack
 
@@ -26,10 +27,18 @@ def _parse_roles(value: str) -> list[str]:
     return roles or ["Viewer"]
 
 
+def _build_audit_sink() -> InMemoryAuditSink | FileAuditSink:
+    sink = os.getenv("AUDIT_SINK", "memory").strip().lower()
+    if sink == "file":
+        path = os.getenv("AUDIT_FILE_PATH", _default_path("/app/data/audit.jsonl", "data/audit.jsonl"))
+        return FileAuditSink(path=path)
+    return InMemoryAuditSink()
+
+
 policy = PolicyEngine.from_yaml(
     os.getenv("POLICY_PATH", _default_path("/app/config/policy.yaml", "config/policy.yaml"))
 )
-audit = InMemoryAuditSink()
+audit: InMemoryAuditSink | FileAuditSink = _build_audit_sink()
 
 registry = PackRegistry()
 registry.register(SampleServicePack())
@@ -45,15 +54,8 @@ orch = Orchestrator(
     tool_runner=runner,
     audit_sink=audit,
     data_dir=os.getenv("DATA_DIR", _default_path("/app/data", "data")),
+    retrieval_backend=os.getenv("DOC_INDEX_BACKEND", "hybrid"),
 )
-
-
-class ChatRequest(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True)
-
-    message: str = Field(min_length=1, max_length=4000)
-    session_id: Optional[str] = Field(default=None, max_length=128)
-    pack_hint: Optional[str] = Field(default=None, max_length=128)
 
 
 class ReindexRequest(BaseModel):
@@ -63,8 +65,12 @@ class ReindexRequest(BaseModel):
 
 
 @app.get("/health")
-def health() -> dict[str, bool]:
-    return {"ok": True}
+def health() -> dict[str, object]:
+    return {
+        "ok": True,
+        "version": os.getenv("APP_VERSION", "0.1.0"),
+        "build_sha": os.getenv("BUILD_SHA", "dev"),
+    }
 
 
 @app.get("/packs")
@@ -76,6 +82,8 @@ def packs() -> dict[str, list[dict]]:
 def get_audit(trace_id: str) -> dict:
     trace = audit.get(trace_id)
     if trace is None:
+        if isinstance(audit, FileAuditSink):
+            raise HTTPException(status_code=501, detail="Audit lookup not supported by file sink")
         raise HTTPException(status_code=404, detail="Trace not found")
     return {"trace_id": trace_id, "events": trace}
 
@@ -95,13 +103,13 @@ def admin_reindex(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@app.post("/chat")
+@app.post("/chat", response_model=ChatResponse)
 def chat(
     req: ChatRequest,
     x_org_id: str = Header(default="demo", alias="X-Org-Id"),
     x_user_id: str = Header(default="u1", alias="X-User-Id"),
     x_roles: str = Header(default="Viewer", alias="X-Roles"),
-) -> dict:
+) -> ChatResponse:
     user = {
         "org_id": x_org_id,
         "user_id": x_user_id,
@@ -113,6 +121,7 @@ def chat(
         message=req.message,
         session_id=req.session_id,
         pack_hint=req.pack_hint,
+        metadata=req.metadata,
     )
     out["meta"]["latency_ms"] = int((time.time() - t0) * 1000)
-    return out
+    return ChatResponse.model_validate(out)

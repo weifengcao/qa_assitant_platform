@@ -1,69 +1,154 @@
-import yaml
 import re
-from typing import Dict, Any, List
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
+
+import yaml
+
+
+def _normalize_space(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip().lower())
+
+
+@dataclass(frozen=True)
+class RoleRule:
+    allowed_packs: List[str] = field(default_factory=list)
+    allowed_tools: List[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RedactionPolicy:
+    mask_emails: bool = True
+    mask_long_ids: bool = True
+    suppress_small_counts: Optional[int] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "mask_emails": self.mask_emails,
+            "mask_long_ids": self.mask_long_ids,
+            "suppress_small_counts": self.suppress_small_counts,
+        }
+
+
+@dataclass(frozen=True)
+class Policy:
+    version: int = 1
+    deny_patterns: List[str] = field(default_factory=list)
+    roles: Dict[str, RoleRule] = field(default_factory=dict)
+    redaction: RedactionPolicy = field(default_factory=RedactionPolicy)
+
 
 class PolicyEngine:
-    def __init__(self, raw: Dict[str, Any]):
-        self.raw = raw
-        self._deny_regexes = self._compile_deny_patterns(self.deny_patterns())
+    def __init__(self, raw: Dict[str, Any] | Policy):
+        self.policy = raw if isinstance(raw, Policy) else self._build_policy(raw or {})
+        self._deny_regexes, self._deny_substrings = self._compile_deny_patterns(self.policy.deny_patterns)
+
+    @classmethod
+    def from_yaml(cls, path: str) -> "PolicyEngine":
+        with open(path, "r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+        return cls(raw=raw)
 
     @staticmethod
-    def from_yaml(path: str) -> "PolicyEngine":
-        with open(path, "r", encoding="utf-8") as f:
-            raw = yaml.safe_load(f)
-        return PolicyEngine(raw=raw)
+    def _build_policy(raw: Dict[str, Any]) -> Policy:
+        raw_roles = raw.get("roles") or {}
+        roles: Dict[str, RoleRule] = {}
+        for role_name, role_cfg in raw_roles.items():
+            role_cfg = role_cfg or {}
+            roles[role_name] = RoleRule(
+                allowed_packs=[str(p) for p in (role_cfg.get("allowed_packs") or [])],
+                allowed_tools=[str(t) for t in (role_cfg.get("allowed_tools") or [])],
+            )
+
+        redaction_cfg = raw.get("redaction") or {}
+        suppress_small_counts = redaction_cfg.get("suppress_small_counts")
+        if suppress_small_counts is None:
+            suppress_small_counts = raw.get("suppress_small_counts")
+        threshold: Optional[int]
+        if isinstance(suppress_small_counts, int):
+            threshold = suppress_small_counts
+        else:
+            threshold = None
+
+        redaction = RedactionPolicy(
+            mask_emails=bool(redaction_cfg.get("mask_emails", True)),
+            mask_long_ids=bool(redaction_cfg.get("mask_long_ids", True)),
+            suppress_small_counts=threshold,
+        )
+
+        version = raw.get("version")
+        return Policy(
+            version=version if isinstance(version, int) else 1,
+            deny_patterns=[str(v) for v in (raw.get("deny_patterns") or [])],
+            roles=roles,
+            redaction=redaction,
+        )
 
     def deny_patterns(self) -> List[str]:
-        return self.raw.get("deny_patterns", []) or []
+        return list(self.policy.deny_patterns)
 
-    def role_rules(self, role: str) -> Dict[str, Any]:
-        return (self.raw.get("roles") or {}).get(role, {})
+    def role_rules(self, role: str) -> RoleRule:
+        return self.policy.roles.get(role, RoleRule())
 
     def allowed_packs(self, roles: List[str]) -> List[str]:
         allowed = set()
-        for r in roles:
-            for p in self.role_rules(r).get("allowed_packs", []):
-                allowed.add(p)
-        return sorted(list(allowed))
+        for role in roles:
+            allowed.update(self.role_rules(role).allowed_packs)
+        return sorted(allowed)
 
     def allowed_tools(self, roles: List[str]) -> List[str]:
         allowed = set()
-        for r in roles:
-            for t in self.role_rules(r).get("allowed_tools", []):
-                allowed.add(t)
-        return sorted(list(allowed))
+        for role in roles:
+            allowed.update(self.role_rules(role).allowed_tools)
+        return sorted(allowed)
+
+    def filter_allowed_tools(self, tool_names: List[str], roles: List[str]) -> List[str]:
+        patterns = self.allowed_tools(roles)
+        return [name for name in tool_names if self.match_pattern(name, patterns)]
+
+    def filter_allowed_packs(self, pack_ids: List[str], roles: List[str]) -> List[str]:
+        patterns = self.allowed_packs(roles)
+        return [name for name in pack_ids if self.match_pattern(name, patterns)]
 
     def is_denied(self, message: str) -> bool:
-        return any(rx.search(message) for rx in self._deny_regexes)
+        if any(rx.search(message) for rx in self._deny_regexes):
+            return True
+        normalized_message = _normalize_space(message)
+        return any(phrase in normalized_message for phrase in self._deny_substrings)
 
     def redaction(self) -> Dict[str, Any]:
-        return self.raw.get("redaction", {}) or {}
+        return self.policy.redaction.to_dict()
 
     @staticmethod
     def match_pattern(name: str, patterns: List[str]) -> bool:
         for pat in patterns:
             if pat == "*":
                 return True
-            if pat.endswith(".*") and name.startswith(pat[:-2]):
-                return True
-            if name == pat:
+            if pat.endswith(".*"):
+                prefix = pat[:-2]
+                if (
+                    name == prefix
+                    or name.startswith(prefix + ".")
+                    or name.startswith(prefix + "_")
+                    or name.startswith(prefix + "-")
+                ):
+                    return True
+            elif name == pat:
                 return True
         return False
 
     @staticmethod
-    def _compile_deny_patterns(patterns: List[str]) -> List[re.Pattern]:
-        compiled: List[re.Pattern] = []
-        for pat in patterns:
-            if not pat:
+    def _compile_deny_patterns(patterns: List[str]) -> Tuple[List[re.Pattern], List[str]]:
+        compiled_regexes: List[re.Pattern] = []
+        compiled_substrings: List[str] = []
+        for pattern in patterns:
+            cleaned = pattern.strip()
+            if not cleaned:
                 continue
-            # Allow explicit regex patterns with "re:" prefix.
-            if pat.startswith("re:"):
+            if cleaned.startswith("re:"):
                 try:
-                    compiled.append(re.compile(pat[3:], flags=re.IGNORECASE))
+                    compiled_regexes.append(re.compile(cleaned[3:], flags=re.IGNORECASE))
                     continue
                 except re.error:
                     pass
-            # Phrase matcher with relaxed whitespace and word boundaries.
-            phrase = re.escape(pat.strip()).replace(r"\ ", r"\s+")
-            compiled.append(re.compile(rf"\b{phrase}\b", flags=re.IGNORECASE))
-        return compiled
+            compiled_substrings.append(_normalize_space(cleaned))
+        return compiled_regexes, compiled_substrings

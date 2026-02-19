@@ -1,14 +1,16 @@
 import re
+import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
-from app.core.intent import classify_intent, Intent
-from app.core.packs import PackRegistry, filter_packs_for_user
+from app.core.audit import new_audit_event
+from app.core.audit_sinks import AuditSink
+from app.core.doc_index import InMemoryDocIndex
+from app.core.ingest import load_docs_from_globs
+from app.core.intent import Intent, classify_intent
+from app.core.packs import PackRegistry
 from app.core.policy import PolicyEngine
 from app.core.redaction import apply_redaction
-from app.core.ingest import load_docs_from_globs
-from app.core.audit import AuditEvent, InMemoryAuditSink
-from app.core.doc_index import InMemoryDocIndex
 from app.core.tools import ToolExecutionError, ToolRunner
 
 _WORD_RE = re.compile(r"[a-z0-9_]+")
@@ -21,8 +23,9 @@ class Orchestrator:
         policy_engine: PolicyEngine,
         doc_index: InMemoryDocIndex,
         tool_runner: ToolRunner,
-        audit_sink: InMemoryAuditSink,
+        audit_sink: AuditSink,
         data_dir: str,
+        retrieval_backend: str = "hybrid",
     ):
         self.packs = pack_registry
         self.policy = policy_engine
@@ -30,6 +33,7 @@ class Orchestrator:
         self.tool_runner = tool_runner
         self.audit = audit_sink
         self.data_dir = data_dir
+        self.retrieval_backend = retrieval_backend
         self._ingested: Dict[str, bool] = {}
 
         # Register pack tools into the shared registry once on startup.
@@ -39,6 +43,16 @@ class Orchestrator:
         for pack in self.packs.list():
             for tool in pack.tools():
                 self.tool_runner.registry.register(tool)
+
+    def _audit(self, trace_id: str, kind: str, data: Dict[str, Any]) -> None:
+        self.audit.log(new_audit_event(trace_id=trace_id, kind=kind, data=data))
+
+    @staticmethod
+    def _preview(text: str, max_chars: int = 180) -> str:
+        compact = " ".join(text.split())
+        if len(compact) <= max_chars:
+            return compact
+        return compact[: max_chars - 3] + "..."
 
     def _ensure_ingested(self, org_id: str, pack_id: str) -> None:
         key = f"{org_id}:{pack_id}"
@@ -85,7 +99,7 @@ class Orchestrator:
             f"- Allowed tools: **{', '.join(allowed_tools) if allowed_tools else '(none)'}**",
         ]
 
-    def _select_tool(self, message: str, routed_packs: List[Any], allowed_patterns: List[str]) -> Optional[str]:
+    def _select_tool(self, message: str, routed_packs: List[Any], allowed_names: Set[str]) -> Optional[str]:
         msg = message.lower()
         tokens = self._tokenize(message)
 
@@ -95,7 +109,7 @@ class Orchestrator:
         for pack in routed_packs:
             for tool in pack.tools():
                 name = tool["name"]
-                if not PolicyEngine.match_pattern(name, allowed_patterns):
+                if name not in allowed_names:
                     continue
 
                 score = 0.0
@@ -127,6 +141,17 @@ class Orchestrator:
 
         return best_name
 
+    def _build_meta(self, trace_id: str, intent: Intent, packs_used: List[str], tool_calls: int) -> Dict[str, Any]:
+        alpha = 0.75 if self.retrieval_backend == "hybrid" else 1.0
+        return {
+            "trace_id": trace_id,
+            "intent": intent.value,
+            "packs_used": packs_used,
+            "latency_ms": 0,
+            "retrieval": {"backend": self.retrieval_backend, "alpha": alpha, "top_k": 5},
+            "tool_calls": tool_calls,
+        }
+
     def reindex(self, org_id: str, pack_id: Optional[str] = None) -> Dict[str, Any]:
         if pack_id:
             pack = self.packs.get(pack_id)
@@ -153,38 +178,65 @@ class Orchestrator:
             "indexed_docs": indexed_docs,
         }
 
-    def handle_chat(self, user: Dict[str, Any], message: str, session_id: Optional[str], pack_hint: Optional[str]) -> Dict[str, Any]:
+    def handle_chat(
+        self,
+        user: Dict[str, Any],
+        message: str,
+        session_id: Optional[str],
+        pack_hint: Optional[str],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         trace_id = str(uuid.uuid4())
         org_id = user["org_id"]
+        user_id = user.get("user_id", "")
         roles = user.get("roles", [])
+        redaction_rules = self.policy.redaction()
+        message_preview = apply_redaction(self._preview(message), redaction_rules)
 
-        self.audit.log(
+        self._audit(
             trace_id,
-            AuditEvent(
-                kind="request",
-                data={"user": user, "message": message, "session_id": session_id, "pack_hint": pack_hint},
-            ),
+            "request_received",
+            {
+                "org_id": org_id,
+                "user_id": user_id,
+                "roles": roles,
+                "session_id": session_id,
+                "pack_hint": pack_hint,
+                "message_preview": message_preview,
+                "metadata": metadata or {},
+            },
         )
 
         if self.policy.is_denied(message):
-            answer = "I can’t help with exporting or listing raw identifiers. I can answer how-to questions or provide aggregate stats if permitted."
-            answer = apply_redaction(answer, self.policy.redaction())
-            self.audit.log(trace_id, AuditEvent(kind="deny", data={"reason": "deny_patterns"}))
+            answer = (
+                "I cannot help with exporting or listing raw identifiers. "
+                "I can provide aggregate stats and how-to guidance instead."
+            )
+            answer = apply_redaction(answer, redaction_rules)
+            warnings = ["Request blocked by policy (deny_patterns)."]
+            meta = self._build_meta(trace_id=trace_id, intent=Intent.SECURITY, packs_used=[], tool_calls=0)
+            self._audit(trace_id, "denied", {"reason": "deny_patterns", "message_preview": message_preview})
+            self._audit(
+                trace_id,
+                "response_returned",
+                {"intent": Intent.SECURITY.value, "citations": 0, "tool_calls": 0, "warnings": warnings},
+            )
             return {
                 "answer": answer,
                 "citations": [],
                 "actions": [],
-                "warnings": ["Request blocked by policy (deny_patterns)."],
-                "meta": {"trace_id": trace_id, "intent": Intent.SECURITY.value, "packs_used": []},
+                "warnings": warnings,
+                "meta": meta,
             }
 
         intent = classify_intent(message)
+        self._audit(trace_id, "intent_classified", {"intent": intent.value})
 
         routed = self.packs.route(message, pack_hint=pack_hint)
-        routed = filter_packs_for_user(routed, policy=self.policy, roles=roles)
+        allowed_pack_ids = set(self.policy.filter_allowed_packs([pack.pack_id for pack in routed], roles))
+        routed = [pack for pack in routed if pack.pack_id in allowed_pack_ids]
         packs_used = [pack.pack_id for pack in routed]
-
-        self.audit.log(trace_id, AuditEvent(kind="intent", data={"intent": intent.value, "packs_used": packs_used}))
+        self._audit(trace_id, "packs_selected", {"packs_used": packs_used, "pack_hint": pack_hint})
 
         for pack in routed:
             self._ensure_ingested(org_id, pack.pack_id)
@@ -224,11 +276,33 @@ class Orchestrator:
                     if hit.get("lexical_score", 0.0) > 0.0 or hit["score"] > 0.2
                 ][:5]
 
+                top_sources = [
+                    {
+                        "title": hit.get("title", ""),
+                        "url": hit.get("url", ""),
+                        "source": hit.get("source", ""),
+                        "score": round(float(hit.get("score", 0.0)), 4),
+                    }
+                    for hit in top
+                ]
+                self._audit(
+                    trace_id,
+                    "retrieval_performed",
+                    {"query_preview": message_preview, "top_sources": top_sources},
+                )
+
                 if top:
                     answer_parts.append("### How-to")
-                    answer_parts.append("Here’s what I found in the docs:")
+                    answer_parts.append("Here's what I found in the docs:")
                     for hit in top[:3]:
-                        citations.append({"title": hit["title"], "url": hit["url"], "source": hit["source"]})
+                        citations.append(
+                            {
+                                "title": hit["title"],
+                                "url": hit["url"],
+                                "source": hit["source"],
+                                "score": float(hit["score"]),
+                            }
+                        )
                     for idx, hit in enumerate(top[:3], start=1):
                         snippet = " ".join(hit["text"].strip().split())[:260]
                         answer_parts.append(f"{idx}. {snippet}")
@@ -236,34 +310,63 @@ class Orchestrator:
                     warnings.append("No relevant docs found (add docs under data/<org>/<pack>/...).")
 
             if intent in (Intent.STATS, Intent.MIXED) and routed:
-                allowed_tools = self.policy.allowed_tools(roles)
-                tool_name = self._select_tool(message, routed, allowed_tools)
+                pack_tool_names = [tool["name"] for pack in routed for tool in pack.tools()]
+                allowed_tool_names = set(self.policy.filter_allowed_tools(pack_tool_names, roles))
+                tool_name = self._select_tool(message, routed, allowed_tool_names)
 
                 if tool_name:
+                    start = time.perf_counter()
                     try:
                         result = self.tool_runner.call(tool_name, args={})
-                        actions.append({"tool": tool_name, "args": {}})
+                        duration_ms = int((time.perf_counter() - start) * 1000)
+                        rendered = apply_redaction(result.get("rendered", str(result)), redaction_rules)
+                        actions.append(
+                            {
+                                "tool": tool_name,
+                                "args": {},
+                                "result_meta": result.get("meta", {"duration_ms": duration_ms}),
+                            }
+                        )
                         answer_parts.append("### Stats")
-                        answer_parts.append(result.get("rendered", str(result)))
+                        answer_parts.append(rendered)
+                        self._audit(
+                            trace_id,
+                            "tool_called",
+                            {"tool": tool_name, "args_summary": {}, "status": "ok", "duration_ms": duration_ms},
+                        )
                     except ToolExecutionError as exc:
+                        duration_ms = int((time.perf_counter() - start) * 1000)
                         warnings.append(str(exc))
+                        self._audit(
+                            trace_id,
+                            "tool_called",
+                            {
+                                "tool": tool_name,
+                                "args_summary": {},
+                                "status": "error",
+                                "duration_ms": duration_ms,
+                                "error": str(exc),
+                            },
+                        )
                 else:
                     warnings.append("No permitted stats tool matched your request.")
 
         citations = self._dedupe_citations(citations)
         warnings = sorted(set(warnings))
 
-        answer = "\n".join(answer_parts).strip() or "I’m not sure how to answer that yet."
-        answer = apply_redaction(answer, self.policy.redaction())
+        answer = "\n".join(answer_parts).strip() or "I am not sure how to answer that yet."
+        answer = apply_redaction(answer, redaction_rules)
+        meta = self._build_meta(trace_id=trace_id, intent=intent, packs_used=packs_used, tool_calls=len(actions))
 
-        self.audit.log(
+        self._audit(
             trace_id,
-            AuditEvent(kind="response", data={"citations": len(citations), "actions": len(actions), "warnings": warnings}),
+            "response_returned",
+            {"intent": intent.value, "citations": len(citations), "tool_calls": len(actions), "warnings": warnings},
         )
         return {
             "answer": answer,
             "citations": citations,
             "actions": actions,
             "warnings": warnings,
-            "meta": {"trace_id": trace_id, "intent": intent.value, "packs_used": packs_used},
+            "meta": meta,
         }

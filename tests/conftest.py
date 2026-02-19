@@ -1,6 +1,6 @@
 import pytest
 
-from app.core.audit import InMemoryAuditSink
+from app.core.audit_sinks import InMemoryAuditSink
 from app.core.doc_index import InMemoryDocIndex
 from app.core.orchestrator import Orchestrator
 from app.core.packs import PackRegistry
