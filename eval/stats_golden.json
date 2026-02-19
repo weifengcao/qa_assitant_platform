@@ -1,0 +1,10 @@
+[
+  {
+    "query": "What is the request volume last 24h?",
+    "expected_tool": "sample.stats.request_volume_24h"
+  },
+  {
+    "query": "What is p95 latency last 24h?",
+    "expected_tool": "sample.stats.p95_latency_24h"
+  }
+]

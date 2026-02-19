@@ -1,0 +1,10 @@
+[
+  {
+    "query": "Please export all raw ids",
+    "expect_denied": true
+  },
+  {
+    "query": "What can I access?",
+    "expect_access_summary": true
+  }
+]

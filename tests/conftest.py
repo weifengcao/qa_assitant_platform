@@ -1,7 +1,7 @@
 import pytest
 
 from app.core.audit_sinks import InMemoryAuditSink
-from app.core.doc_index import InMemoryDocIndex
+from app.core.doc_index import HybridDocIndex
 from app.core.orchestrator import Orchestrator
 from app.core.packs import PackRegistry
 from app.core.policy import PolicyEngine
@@ -19,7 +19,7 @@ def orchestrator() -> Orchestrator:
     return Orchestrator(
         pack_registry=registry,
         policy_engine=policy,
-        doc_index=InMemoryDocIndex(),
+        doc_index=HybridDocIndex(alpha=0.75),
         tool_runner=runner,
         audit_sink=audit,
         data_dir="data",

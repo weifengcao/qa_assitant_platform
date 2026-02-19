@@ -5,12 +5,13 @@ from typing import Any, Dict, List, Optional, Set
 
 from app.core.audit import new_audit_event
 from app.core.audit_sinks import AuditSink
-from app.core.doc_index import InMemoryDocIndex
-from app.core.ingest import load_docs_from_globs
+from app.core.doc_index import DocIndex
+from app.core.ingest import load_docs_from_sources
 from app.core.intent import Intent, classify_intent
 from app.core.packs import PackRegistry
 from app.core.policy import PolicyEngine
 from app.core.redaction import apply_redaction
+from app.core.tools import ToolDef
 from app.core.tools import ToolExecutionError, ToolRunner
 
 _WORD_RE = re.compile(r"[a-z0-9_]+")
@@ -21,7 +22,7 @@ class Orchestrator:
         self,
         pack_registry: PackRegistry,
         policy_engine: PolicyEngine,
-        doc_index: InMemoryDocIndex,
+        doc_index: DocIndex,
         tool_runner: ToolRunner,
         audit_sink: AuditSink,
         data_dir: str,
@@ -63,14 +64,13 @@ class Orchestrator:
         if not pack:
             return
 
-        docs = load_docs_from_globs(
-            self.data_dir,
+        sources = pack.doc_sources(
             org_id=org_id,
-            pack_id=pack_id,
-            globs=pack.doc_globs(),
+            data_dir=self.data_dir,
         )
-        if docs:
-            self.doc_index.ingest(docs)
+        chunks = load_docs_from_sources(sources=sources)
+        if chunks:
+            self.doc_index.ingest(chunks)
         self._ingested[key] = True
 
     @staticmethod
@@ -99,16 +99,16 @@ class Orchestrator:
             f"- Allowed tools: **{', '.join(allowed_tools) if allowed_tools else '(none)'}**",
         ]
 
-    def _select_tool(self, message: str, routed_packs: List[Any], allowed_names: Set[str]) -> Optional[str]:
+    def _select_tool(self, message: str, routed_packs: List[Any], allowed_names: Set[str]) -> Optional[ToolDef]:
         msg = message.lower()
         tokens = self._tokenize(message)
 
-        best_name: Optional[str] = None
+        best_tool: Optional[ToolDef] = None
         best_score = float("-inf")
 
         for pack in routed_packs:
             for tool in pack.tools():
-                name = tool["name"]
+                name = tool.name
                 if name not in allowed_names:
                     continue
 
@@ -117,8 +117,8 @@ class Orchestrator:
                     score += 0.2
 
                 # Match explicit tool keywords first, then weaker token matches.
-                for kw in tool.get("keywords", []):
-                    keyword = str(kw).lower()
+                for keyword in tool.keywords:
+                    keyword = keyword.lower()
                     if keyword in msg:
                         score += 3.0
                     elif keyword in tokens:
@@ -137,12 +137,14 @@ class Orchestrator:
 
                 if score > best_score:
                     best_score = score
-                    best_name = name
+                    best_tool = tool
 
-        return best_name
+        return best_tool
 
     def _build_meta(self, trace_id: str, intent: Intent, packs_used: List[str], tool_calls: int) -> Dict[str, Any]:
-        alpha = 0.75 if self.retrieval_backend == "hybrid" else 1.0
+        alpha = 1.0
+        if self.retrieval_backend == "hybrid":
+            alpha = float(getattr(self.doc_index, "alpha", 0.75))
         return {
             "trace_id": trace_id,
             "intent": intent.value,
@@ -264,7 +266,7 @@ class Orchestrator:
                     hits.extend(
                         self.doc_index.search(
                             message,
-                            k=4,
+                            top_k=4,
                             filters={"org_id": org_id, "pack_id": pack.pack_id},
                         )
                     )
@@ -310,29 +312,39 @@ class Orchestrator:
                     warnings.append("No relevant docs found (add docs under data/<org>/<pack>/...).")
 
             if intent in (Intent.STATS, Intent.MIXED) and routed:
-                pack_tool_names = [tool["name"] for pack in routed for tool in pack.tools()]
+                pack_tool_names = [tool.name for pack in routed for tool in pack.tools()]
                 allowed_tool_names = set(self.policy.filter_allowed_tools(pack_tool_names, roles))
-                tool_name = self._select_tool(message, routed, allowed_tool_names)
+                selected_tool = self._select_tool(message, routed, allowed_tool_names)
 
-                if tool_name:
+                if selected_tool:
+                    tool_name = selected_tool.name
                     start = time.perf_counter()
                     try:
-                        result = self.tool_runner.call(tool_name, args={})
+                        result = self.tool_runner.call(tool_name=tool_name, args={}, query=message)
                         duration_ms = int((time.perf_counter() - start) * 1000)
                         rendered = apply_redaction(result.get("rendered", str(result)), redaction_rules)
+                        result_warnings = result.get("warnings", [])
+                        if isinstance(result_warnings, list):
+                            warnings.extend(str(item) for item in result_warnings)
                         actions.append(
                             {
                                 "tool": tool_name,
-                                "args": {},
+                                "args": result.get("args", {}),
                                 "result_meta": result.get("meta", {"duration_ms": duration_ms}),
                             }
                         )
                         answer_parts.append("### Stats")
+                        answer_parts.append(f"- Tool used: `{tool_name}`")
                         answer_parts.append(rendered)
                         self._audit(
                             trace_id,
                             "tool_called",
-                            {"tool": tool_name, "args_summary": {}, "status": "ok", "duration_ms": duration_ms},
+                            {
+                                "tool": tool_name,
+                                "args_summary": result.get("args", {}),
+                                "status": "ok",
+                                "duration_ms": duration_ms,
+                            },
                         )
                     except ToolExecutionError as exc:
                         duration_ms = int((time.perf_counter() - start) * 1000)

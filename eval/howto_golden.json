@@ -1,0 +1,6 @@
+[
+  {
+    "query": "How do I rotate an API key?",
+    "expected_citation_contains": ["rotating_api_keys"]
+  }
+]

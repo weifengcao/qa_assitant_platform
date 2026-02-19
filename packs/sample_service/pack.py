@@ -1,5 +1,7 @@
-from typing import Dict, Any, List
+from typing import List
+
 from app.core.packs import ProductPack
+from app.core.tools import ToolDef
 from packs.sample_service.tools import stats_request_volume_24h, stats_p95_latency_24h
 
 class SampleServicePack(ProductPack):
@@ -12,18 +14,40 @@ class SampleServicePack(ProductPack):
     def doc_globs(self) -> List[str]:
         return ["howto/**/*.md", "howto/**/*.txt"]
 
-    def tools(self) -> List[Dict[str, Any]]:
+    def tools(self) -> List[ToolDef]:
         return [
-            {
-                "name": "sample.stats.request_volume_24h",
-                "schema": {"type": "object", "properties": {}, "additionalProperties": False},
-                "keywords": ["request volume", "volume", "traffic", "requests"],
-                "connector": {"type": "mock", "handler": stats_request_volume_24h},
-            },
-            {
-                "name": "sample.stats.p95_latency_24h",
-                "schema": {"type": "object", "properties": {}, "additionalProperties": False},
-                "keywords": ["latency", "p95", "response time"],
-                "connector": {"type": "mock", "handler": stats_p95_latency_24h},
-            },
+            ToolDef(
+                name="sample.stats.request_volume_24h",
+                description="Return request volume over a timeframe.",
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "timeframe": {"type": "string"},
+                        "metric": {"type": "string"},
+                        "service": {"type": "string"},
+                        "environment": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
+                keywords=["request volume", "volume", "traffic", "requests"],
+                default_args={"timeframe": "24h", "metric": "request_volume"},
+                connector={"type": "mock", "handler": stats_request_volume_24h},
+            ),
+            ToolDef(
+                name="sample.stats.p95_latency_24h",
+                description="Return p95 latency over a timeframe.",
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "timeframe": {"type": "string"},
+                        "metric": {"type": "string"},
+                        "service": {"type": "string"},
+                        "environment": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
+                keywords=["latency", "p95", "response time"],
+                default_args={"timeframe": "24h", "metric": "p95_latency"},
+                connector={"type": "mock", "handler": stats_p95_latency_24h},
+            ),
         ]

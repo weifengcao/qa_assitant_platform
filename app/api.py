@@ -6,7 +6,8 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.audit_sinks import FileAuditSink, InMemoryAuditSink
-from app.core.doc_index import InMemoryDocIndex
+from app.core.doc_index import HybridDocIndex, InMemoryDocIndex
+from app.core.embeddings import HashEmbedder, SentenceTransformerEmbedder
 from app.core.orchestrator import Orchestrator
 from app.core.packs import PackRegistry
 from app.core.policy import PolicyEngine
@@ -35,6 +36,25 @@ def _build_audit_sink() -> InMemoryAuditSink | FileAuditSink:
     return InMemoryAuditSink()
 
 
+def _build_embedder():
+    backend = os.getenv("EMBEDDING_BACKEND", "hash").strip().lower()
+    if backend == "st":
+        try:
+            return SentenceTransformerEmbedder()
+        except RuntimeError:
+            return HashEmbedder()
+    return HashEmbedder()
+
+
+def _build_doc_index():
+    backend = os.getenv("DOC_INDEX_BACKEND", "hybrid").strip().lower()
+    embedder = _build_embedder()
+    if backend == "vector_only":
+        return InMemoryDocIndex(embedder=embedder), "vector_only"
+    alpha = float(os.getenv("DOC_INDEX_ALPHA", "0.75"))
+    return HybridDocIndex(alpha=alpha, embedder=embedder), "hybrid"
+
+
 policy = PolicyEngine.from_yaml(
     os.getenv("POLICY_PATH", _default_path("/app/config/policy.yaml", "config/policy.yaml"))
 )
@@ -43,9 +63,9 @@ audit: InMemoryAuditSink | FileAuditSink = _build_audit_sink()
 registry = PackRegistry()
 registry.register(SampleServicePack())
 
-doc_index = InMemoryDocIndex()
 tools = ToolRegistry()
 runner = ToolRunner(tool_registry=tools)
+doc_index, retrieval_backend = _build_doc_index()
 
 orch = Orchestrator(
     pack_registry=registry,
@@ -54,7 +74,7 @@ orch = Orchestrator(
     tool_runner=runner,
     audit_sink=audit,
     data_dir=os.getenv("DATA_DIR", _default_path("/app/data", "data")),
-    retrieval_backend=os.getenv("DOC_INDEX_BACKEND", "hybrid"),
+    retrieval_backend=retrieval_backend,
 )
 
 

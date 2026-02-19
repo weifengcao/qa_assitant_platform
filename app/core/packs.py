@@ -1,5 +1,9 @@
-from typing import Dict, Any, List, Optional
+import os
+from typing import Any, Dict, List, Optional
+
+from app.core.docsources import DocSource, filesystem_source
 from app.core.policy import PolicyEngine
+from app.core.tools import ToolDef
 
 class ProductPack:
     pack_id: str
@@ -12,7 +16,17 @@ class ProductPack:
         """Relative globs under data/<org>/<pack>/ for ingestion."""
         return []
 
-    def tools(self) -> List[Dict[str, Any]]:
+    def doc_sources(self, org_id: str, data_dir: str) -> List[DocSource]:
+        return [
+            filesystem_source(
+                org_id=org_id,
+                pack_id=self.pack_id,
+                base_path=os.path.join(data_dir, org_id, self.pack_id),
+                globs=self.doc_globs(),
+            )
+        ]
+
+    def tools(self) -> List[ToolDef]:
         return []
 
 class PackRegistry:
@@ -42,7 +56,7 @@ class PackRegistry:
                 "pack_id": p.pack_id,
                 "display_name": p.display_name,
                 "keywords": p.keywords(),
-                "tools": [t.get("name") for t in p.tools()],
+                "tools": [t.name for t in p.tools()],
             })
         return out
 

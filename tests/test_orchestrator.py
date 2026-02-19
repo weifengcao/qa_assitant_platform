@@ -63,6 +63,33 @@ def test_reindex_unknown_pack_raises(orchestrator) -> None:
         orchestrator.reindex(org_id="demo", pack_id="missing")
 
 
+def test_mixed_query_returns_howto_and_stats(orchestrator, viewer_user) -> None:
+    out = orchestrator.handle_chat(
+        user=viewer_user,
+        message="How do I rotate an API key and what is request volume last 24h?",
+        session_id="s1",
+        pack_hint="sample_service",
+    )
+
+    assert "### How-to" in out["answer"]
+    assert "### Stats" in out["answer"]
+    assert out["actions"]
+
+
+def test_security_query_skips_retrieval_and_tools(orchestrator, viewer_user) -> None:
+    out = orchestrator.handle_chat(
+        user=viewer_user,
+        message="What can I access?",
+        session_id="s1",
+        pack_hint=None,
+    )
+
+    assert out["meta"]["intent"] == "security"
+    assert "### Access summary" in out["answer"]
+    assert not out["actions"]
+    assert not out["citations"]
+
+
 def test_audit_events_cover_request_lifecycle(orchestrator, viewer_user) -> None:
     out = orchestrator.handle_chat(
         user=viewer_user,
