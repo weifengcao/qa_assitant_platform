@@ -12,6 +12,8 @@ Core strategy:
 
 The architecture keeps a clean pack/connector boundary so a future Harness integration can be added without major refactoring.
 
+This document describes the target architecture and the Milestone 1 baseline currently implemented in this repository.
+
 ## 2. Product Goal
 Enable contributors to deploy a production-style assistant with three pillars:
 
@@ -32,7 +34,7 @@ The platform follows the dominant enterprise assistant blueprint:
 
 ## 4. High-Level Architecture
 ### Runtime Components
-- **API Gateway (`FastAPI`)**: exposes `/chat`, `/sessions`, `/admin/*`.
+- **API Gateway (`FastAPI`)**: exposes `/chat`, `/packs`, `/health`, and `/audit/{trace_id}`.
 - **Orchestrator**: intent classifier, planner (retrieval vs tool calls), and response composer.
 - **Knowledge Service (RAG)**: ingestion pipeline, chunking/embeddings, hybrid retrieval, and reranking.
 - **Tool Service**: tool registry, schema validation, and connectors (`HTTP`, read-only `SQL`, `Prometheus`, etc.).
@@ -87,14 +89,18 @@ Baseline controls for OSS adoption:
 ## 7. API Contract
 Stable contract designed to map to future Harness audit/action semantics.
 
-### `/chat` Request
+### `/chat` Request (Milestone 1 Baseline)
+Identity and tenant scope are provided via headers:
+- `X-Org-Id`
+- `X-User-Id`
+- `X-Roles` (comma-separated)
+
+Body:
 ```json
 {
-  "org_id": "acme",
-  "user": { "id": "u1", "roles": ["Ops"] },
   "session_id": "s1",
   "message": "How many profiles are in sandbox prod?",
-  "context": { "pack_hint": "aep" }
+  "pack_hint": "sample_service"
 }
 ```
 
@@ -113,8 +119,9 @@ Stable contract designed to map to future Harness audit/action semantics.
   ],
   "warnings": ["..."],
   "meta": {
+    "trace_id": "c4a5b4e7-....",
     "intent": "stats",
-    "packs_used": ["aep"],
+    "packs_used": ["sample_service"],
     "latency_ms": 842
   }
 }
@@ -124,12 +131,13 @@ Stable contract designed to map to future Harness audit/action semantics.
 ### Ingestion
 - `HTML -> Markdown`
 - `PDF -> text` extraction (optional)
-- Chunk size: ~`500-1000` tokens with overlap
+- Milestone 1 baseline: word-window chunking (overlap) for lightweight indexing
+- Target production profile: ~`500-1000` token chunks with overlap
 - Persist metadata: `url`, `heading`, `version`, `timestamp`
 
 ### Retrieval
-- Hybrid retrieval: `BM25 + embeddings`
-- Rerank `top 20 -> top 5` (cross-encoder optional)
+- Milestone 1 baseline: in-memory hybrid scoring (`lexical overlap + deterministic embedding similarity`)
+- Target production profile: `BM25 + embeddings` with rerank (`top 20 -> top 5`)
 - Always return citations
 
 ### Answering
@@ -147,8 +155,8 @@ Each tool includes:
 Execution flow:
 1. Parse tool arguments via structured LLM output
 2. Validate against JSON Schema
-3. Run RBAC/policy checks
-4. Execute connector
+3. Run RBAC/policy checks and select best permitted tool by intent/keyword match
+4. Execute connector (read-only by default)
 5. Post-process (units, rounding, suppression)
 6. Compose response
 
@@ -162,7 +170,7 @@ Execution flow:
 ### Response Safety
 - PII redaction pass
 - Small-count suppression
-- Deny patterns for "export/list raw IDs"
+- Deny patterns for "export/list raw IDs" (phrase matching; optional regex with `re:` prefix)
 
 This baseline is sufficient for OSS and leaves room for Harness as a richer control plane later.
 
@@ -191,3 +199,9 @@ This baseline is sufficient for OSS and leaves room for Harness as a richer cont
 - Admin endpoints (`upload docs`, `register tools`, `view logs`)
 - Eval harness (golden Q&A tests per pack)
 - UI (simple Next.js app)
+
+## 14. Baseline Implementation Notes (Current Repo)
+- Docs are ingested on demand per `org_id + pack_id` and cached in-memory.
+- The default index backend is `InMemoryDocIndex` with lightweight hybrid scoring.
+- Tool execution is schema-validated and returns typed execution errors rather than hard failures.
+- The API exposes per-trace audit logs through `/audit/{trace_id}` for debugging and observability.

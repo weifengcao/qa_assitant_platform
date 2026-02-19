@@ -5,6 +5,7 @@ from typing import Dict, Any, List
 class PolicyEngine:
     def __init__(self, raw: Dict[str, Any]):
         self.raw = raw
+        self._deny_regexes = self._compile_deny_patterns(self.deny_patterns())
 
     @staticmethod
     def from_yaml(path: str) -> "PolicyEngine":
@@ -33,8 +34,7 @@ class PolicyEngine:
         return sorted(list(allowed))
 
     def is_denied(self, message: str) -> bool:
-        m = message.lower()
-        return any(pat in m for pat in self.deny_patterns())
+        return any(rx.search(message) for rx in self._deny_regexes)
 
     def redaction(self) -> Dict[str, Any]:
         return self.raw.get("redaction", {}) or {}
@@ -49,3 +49,21 @@ class PolicyEngine:
             if name == pat:
                 return True
         return False
+
+    @staticmethod
+    def _compile_deny_patterns(patterns: List[str]) -> List[re.Pattern]:
+        compiled: List[re.Pattern] = []
+        for pat in patterns:
+            if not pat:
+                continue
+            # Allow explicit regex patterns with "re:" prefix.
+            if pat.startswith("re:"):
+                try:
+                    compiled.append(re.compile(pat[3:], flags=re.IGNORECASE))
+                    continue
+                except re.error:
+                    pass
+            # Phrase matcher with relaxed whitespace and word boundaries.
+            phrase = re.escape(pat.strip()).replace(r"\ ", r"\s+")
+            compiled.append(re.compile(rf"\b{phrase}\b", flags=re.IGNORECASE))
+        return compiled

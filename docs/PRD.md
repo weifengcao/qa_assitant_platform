@@ -30,7 +30,7 @@ Text-first. Architecture must make later “harness integration” a drop-in upg
 - citations (title/url/source)
 - actions (tool calls)
 - warnings (policy or safety notes)
-- meta (intent, packs used, latency)
+- meta (intent, packs used, trace id, latency)
 
 ## Core capabilities
 ### 1) Packs
@@ -42,17 +42,19 @@ A **pack** is the unit of extensibility:
 ### 2) RAG (How-to)
 - ingest docs (markdown/html/text)
 - chunk + embed
-- hybrid retrieval (BM25 + vectors) **planned**; Milestone 1 ships with a simple vector-only stub to keep dependencies light
+- Milestone 1 baseline: lightweight hybrid retrieval (lexical overlap + deterministic embedding similarity)
+- future profile: BM25 + vector retrieval + reranking
 - citations required
 
 ### 3) Tools (Stats)
 - tools are described with name + JSON schema + connector config
+- tool selection uses intent + keyword matching, then enforces RBAC allowlists
 - connectors include HTTP + mock; SQL/Prometheus are stubs
 
 ### 4) Security
 - org isolation for docs/tools
 - RBAC: role -> allowed packs/tools
-- deny patterns: “export raw IDs”, “download all”, etc.
+- deny patterns: “export raw IDs”, “download all”, etc. (phrase matching; optional regex via `re:` prefix)
 - redaction pass (emails, long ids)
 
 ## Success criteria (Milestone 1)
@@ -61,6 +63,7 @@ A **pack** is the unit of extensibility:
   - “how-to” query returns citations
   - “stats” query calls tool and returns result
   - “security” query explains allowed packs/tools
+- traceability endpoint `/audit/{trace_id}` returns request/intent/response events
 - adding a new pack is <30 minutes with template
 
 ## Milestone plan

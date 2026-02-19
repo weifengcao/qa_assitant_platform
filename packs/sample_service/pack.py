@@ -17,11 +17,13 @@ class SampleServicePack(ProductPack):
             {
                 "name": "sample.stats.request_volume_24h",
                 "schema": {"type": "object", "properties": {}, "additionalProperties": False},
+                "keywords": ["request volume", "volume", "traffic", "requests"],
                 "connector": {"type": "mock", "handler": stats_request_volume_24h},
             },
             {
                 "name": "sample.stats.p95_latency_24h",
                 "schema": {"type": "object", "properties": {}, "additionalProperties": False},
+                "keywords": ["latency", "p95", "response time"],
                 "connector": {"type": "mock", "handler": stats_p95_latency_24h},
             },
         ]

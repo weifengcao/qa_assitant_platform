@@ -50,10 +50,15 @@ curl -s http://localhost:8080/chat \
   -d '{"message":"What can I access?"}' | jq
 ```
 
+Inspect audit trace from a chat response:
+```bash
+curl -s http://localhost:8080/audit/<trace_id> | jq
+```
+
 ## Configure
 - Policy: `config/policy.yaml`
 - Packs: `packs/` (Python modules) + sample docs under `data/`
 
 ## Notes
-- Default doc index is **in-memory** for ease of use.
+- Default doc index is **in-memory hybrid** (lexical overlap + deterministic embeddings) for ease of use.
 - Postgres + pgvector is included in docker-compose; the pgvector index backend is scaffolded for later.

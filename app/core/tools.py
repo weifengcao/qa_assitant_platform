@@ -1,6 +1,10 @@
 from typing import Dict, Any, List, Optional
 import jsonschema
 
+class ToolExecutionError(RuntimeError):
+    pass
+
+
 class ToolRegistry:
     def __init__(self):
         self._tools: Dict[str, Dict[str, Any]] = {}
@@ -21,11 +25,14 @@ class ToolRunner:
     def call(self, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         tool = self.registry.get(tool_name)
         if not tool:
-            raise KeyError(f"Unknown tool: {tool_name}")
+            raise ToolExecutionError(f"Unknown tool: {tool_name}")
 
         schema = tool.get("schema")
         if schema:
-            jsonschema.validate(instance=args, schema=schema)
+            try:
+                jsonschema.validate(instance=args, schema=schema)
+            except jsonschema.ValidationError as exc:
+                raise ToolExecutionError(f"Invalid arguments for {tool_name}: {exc.message}") from exc
 
         connector = tool.get("connector", {"type": "mock"})
         ctype = connector.get("type", "mock")
@@ -34,13 +41,16 @@ class ToolRunner:
         if ctype == "mock":
             handler = connector.get("handler")
             if not handler or not callable(handler):
-                raise RuntimeError("Mock tool missing callable handler")
-            return handler(args)
+                raise ToolExecutionError(f"Mock tool {tool_name} missing callable handler")
+            try:
+                return handler(args)
+            except Exception as exc:
+                raise ToolExecutionError(f"Tool {tool_name} failed: {exc}") from exc
 
         # Future stubs:
         if ctype == "http":
-            raise NotImplementedError("HTTP connector stub (implement later).")
+            raise ToolExecutionError("HTTP connector stub (implement later).")
         if ctype == "sql":
-            raise NotImplementedError("SQL connector stub (implement later).")
+            raise ToolExecutionError("SQL connector stub (implement later).")
 
-        raise NotImplementedError(f"Unknown connector type: {ctype}")
+        raise ToolExecutionError(f"Unknown connector type for {tool_name}: {ctype}")
