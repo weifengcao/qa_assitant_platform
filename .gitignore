@@ -1,0 +1,49 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Build and packaging outputs
+build/
+dist/
+.eggs/
+*.egg-info/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test, lint, and type-check caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+
+# Coverage artifacts
+.coverage
+.coverage.*
+htmlcov/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime files
+*.log
+*.pid
+*.sqlite3
+*.db
+
+# Notebook checkpoints
+.ipynb_checkpoints/
