@@ -1,0 +1,17 @@
+version: 1
+deny_patterns:
+  - "export"
+  - "download"
+  - "list all ids"
+  - "raw ids"
+  - "dump"
+redaction:
+  mask_emails: true
+  mask_long_ids: true
+roles:
+  Viewer:
+    allowed_packs: ["sample_service"]
+    allowed_tools: ["sample.stats.*"]
+  Admin:
+    allowed_packs: ["*"]
+    allowed_tools: ["*"]
