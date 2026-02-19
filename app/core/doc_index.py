@@ -22,18 +22,40 @@ class InMemoryDocIndex:
         self.dim = dim
         self._items: List[Dict[str, Any]] = []
 
+    @staticmethod
+    def _match_filters(item: Dict[str, Any], filters: Optional[Dict[str, Any]]) -> bool:
+        if not filters:
+            return True
+        return all(item.get(key) == val for key, val in filters.items())
+
     def ingest(self, docs: List[Dict[str, Any]]) -> None:
         for d in docs:
             emb = _hash_embed(d["text"], dim=self.dim)
             self._items.append({**d, "emb": emb, "tokens": _tokenize(d.get("text", ""))})
 
+    def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
+        return sum(1 for item in self._items if self._match_filters(item, filters))
+
+    def clear(self, filters: Optional[Dict[str, Any]] = None) -> int:
+        if not filters:
+            removed = len(self._items)
+            self._items = []
+            return removed
+
+        kept: List[Dict[str, Any]] = []
+        removed = 0
+        for item in self._items:
+            if self._match_filters(item, filters):
+                removed += 1
+            else:
+                kept.append(item)
+        self._items = kept
+        return removed
+
     def search(self, query: str, k: int = 5, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         q = _hash_embed(query, dim=self.dim)
         q_tokens = _tokenize(query)
-        items = self._items
-        if filters:
-            for key, val in filters.items():
-                items = [it for it in items if it.get(key) == val]
+        items = [item for item in self._items if self._match_filters(item, filters)]
         if not items:
             return []
         sims = []

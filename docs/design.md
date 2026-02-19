@@ -34,7 +34,7 @@ The platform follows the dominant enterprise assistant blueprint:
 
 ## 4. High-Level Architecture
 ### Runtime Components
-- **API Gateway (`FastAPI`)**: exposes `/chat`, `/packs`, `/health`, and `/audit/{trace_id}`.
+- **API Gateway (`FastAPI`)**: exposes `/chat`, `/packs`, `/health`, `/audit/{trace_id}`, and `/admin/reindex`.
 - **Orchestrator**: intent classifier, planner (retrieval vs tool calls), and response composer.
 - **Knowledge Service (RAG)**: ingestion pipeline, chunking/embeddings, hybrid retrieval, and reranking.
 - **Tool Service**: tool registry, schema validation, and connectors (`HTTP`, read-only `SQL`, `Prometheus`, etc.).
@@ -113,8 +113,8 @@ Body:
   ],
   "actions": [
     {
-      "tool": "aep.stats.profile_count",
-      "args": { "sandbox": "prod" }
+      "tool": "sample.stats.request_volume_24h",
+      "args": {}
     }
   ],
   "warnings": ["..."],
@@ -124,6 +124,27 @@ Body:
     "packs_used": ["sample_service"],
     "latency_ms": 842
   }
+}
+```
+
+### `/admin/reindex` (Milestone 1 Baseline)
+- Purpose: clear and rebuild ingested docs for an org (all packs or one pack).
+- Access: requires `Admin` role in `X-Roles`.
+
+Request body:
+```json
+{
+  "pack_id": "sample_service"
+}
+```
+
+Response shape:
+```json
+{
+  "org_id": "demo",
+  "packs": ["sample_service"],
+  "removed_docs": 12,
+  "indexed_docs": 12
 }
 ```
 
@@ -196,7 +217,7 @@ This baseline is sufficient for OSS and leaves room for Harness as a richer cont
 - Pack interface + 1 sample pack
 
 ### Next
-- Admin endpoints (`upload docs`, `register tools`, `view logs`)
+- Additional admin endpoints (`upload docs`, `register tools`, `view logs`)
 - Eval harness (golden Q&A tests per pack)
 - UI (simple Next.js app)
 
@@ -205,3 +226,4 @@ This baseline is sufficient for OSS and leaves room for Harness as a richer cont
 - The default index backend is `InMemoryDocIndex` with lightweight hybrid scoring.
 - Tool execution is schema-validated and returns typed execution errors rather than hard failures.
 - The API exposes per-trace audit logs through `/audit/{trace_id}` for debugging and observability.
+- Docs can be refreshed with `/admin/reindex` (org-scoped, optional `pack_id`).

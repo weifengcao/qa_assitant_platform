@@ -56,6 +56,7 @@ A **pack** is the unit of extensibility:
 - RBAC: role -> allowed packs/tools
 - deny patterns: “export raw IDs”, “download all”, etc. (phrase matching; optional regex via `re:` prefix)
 - redaction pass (emails, long ids)
+- admin-only operations for index refresh (`/admin/reindex`)
 
 ## Success criteria (Milestone 1)
 - `docker compose up` brings up API + Postgres (pgvector) + Redis
@@ -64,6 +65,7 @@ A **pack** is the unit of extensibility:
   - “stats” query calls tool and returns result
   - “security” query explains allowed packs/tools
 - traceability endpoint `/audit/{trace_id}` returns request/intent/response events
+- admin reindex endpoint refreshes docs for one pack or all packs in an org
 - adding a new pack is <30 minutes with template
 
 ## Milestone plan

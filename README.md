@@ -55,9 +55,24 @@ Inspect audit trace from a chat response:
 curl -s http://localhost:8080/audit/<trace_id> | jq
 ```
 
+Admin reindex docs for an org (requires `Admin` role):
+```bash
+curl -s http://localhost:8080/admin/reindex \
+  -H "Content-Type: application/json" \
+  -H "X-Org-Id: demo" \
+  -H "X-Roles: Admin" \
+  -d '{"pack_id":"sample_service"}' | jq
+```
+
 ## Configure
 - Policy: `config/policy.yaml`
 - Packs: `packs/` (Python modules) + sample docs under `data/`
+
+## Test
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
 
 ## Notes
 - Default doc index is **in-memory hybrid** (lexical overlap + deterministic embeddings) for ease of use.

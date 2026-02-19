@@ -56,6 +56,12 @@ class ChatRequest(BaseModel):
     pack_hint: Optional[str] = Field(default=None, max_length=128)
 
 
+class ReindexRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    pack_id: Optional[str] = Field(default=None, max_length=128)
+
+
 @app.get("/health")
 def health() -> dict[str, bool]:
     return {"ok": True}
@@ -72,6 +78,21 @@ def get_audit(trace_id: str) -> dict:
     if trace is None:
         raise HTTPException(status_code=404, detail="Trace not found")
     return {"trace_id": trace_id, "events": trace}
+
+
+@app.post("/admin/reindex")
+def admin_reindex(
+    req: ReindexRequest,
+    x_org_id: str = Header(default="demo", alias="X-Org-Id"),
+    x_roles: str = Header(default="Viewer", alias="X-Roles"),
+) -> dict:
+    roles = _parse_roles(x_roles)
+    if "Admin" not in roles:
+        raise HTTPException(status_code=403, detail="Admin role required")
+    try:
+        return orch.reindex(org_id=x_org_id, pack_id=req.pack_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/chat")

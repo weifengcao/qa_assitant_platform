@@ -127,6 +127,32 @@ class Orchestrator:
 
         return best_name
 
+    def reindex(self, org_id: str, pack_id: Optional[str] = None) -> Dict[str, Any]:
+        if pack_id:
+            pack = self.packs.get(pack_id)
+            if not pack:
+                raise ValueError(f"Unknown pack_id: {pack_id}")
+            target_pack_ids = [pack_id]
+        else:
+            target_pack_ids = [pack.pack_id for pack in self.packs.list()]
+
+        removed_docs = 0
+        for target_pack_id in target_pack_ids:
+            self._ingested.pop(f"{org_id}:{target_pack_id}", None)
+            removed_docs += self.doc_index.clear(filters={"org_id": org_id, "pack_id": target_pack_id})
+
+        indexed_docs = 0
+        for target_pack_id in target_pack_ids:
+            self._ensure_ingested(org_id=org_id, pack_id=target_pack_id)
+            indexed_docs += self.doc_index.count(filters={"org_id": org_id, "pack_id": target_pack_id})
+
+        return {
+            "org_id": org_id,
+            "packs": target_pack_ids,
+            "removed_docs": removed_docs,
+            "indexed_docs": indexed_docs,
+        }
+
     def handle_chat(self, user: Dict[str, Any], message: str, session_id: Optional[str], pack_hint: Optional[str]) -> Dict[str, Any]:
         trace_id = str(uuid.uuid4())
         org_id = user["org_id"]
