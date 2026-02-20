@@ -1,52 +1,91 @@
-# Universal Q&A Assistant Platform (OSS) - Baseline
+# Universal Q&A Assistant Platform (OSS Baseline)
 
-A pack-based assistant platform with three pillars:
-- **How-to**: RAG answers with citations.
-- **Stats**: read-only tool calls with schema validation.
-- **Security**: RBAC, deny patterns, and response redaction.
+Build a production-style assistant that is **pack-based**, **self-hostable**, and centered on three pillars:
+
+- **How-to**: doc-grounded answers with citations (RAG)
+- **Stats**: deterministic, schema-validated read-only tool calls
+- **Security**: RBAC, deny patterns, and output redaction by default
+
+This repo is designed as an OSS baseline that runs without external proprietary services.
+
+## Why This Repo
+
+- Stable `/chat` contract ready for future harness integrations
+- Clear separation between packs, retrieval, policy, and tool execution
+- Works with local docs and mock tools out of the box
+- Includes tests + eval harness to catch regressions
+
+## Core Capabilities
+
+1. **Pack model** for adding product-specific docs and tools quickly
+1. **Hybrid retrieval** (`lexical + vector`) and `vector_only` mode
+1. **Typed tools** with JSON Schema validation and deterministic argument extraction
+1. **Policy engine** for allowed packs/tools + deny phrases + redaction
+1. **Audit events** for request lifecycle tracing
+
+## Architecture at a Glance
+
+- API: `FastAPI` endpoints (`/health`, `/packs`, `/chat`, `/audit/{trace_id}`, `/admin/reindex`)
+- Orchestrator: intent routing + policy checks + retrieval + tool execution + response shaping
+- Retrieval: chunking + embedding + in-memory index backends
+- Tools: registry + connectors (`mock`, `http` stub, `sql_readonly` stub)
+- Security: RBAC filtering, deny rules, and redaction pass
 
 ## Quickstart
+
+Run with Docker:
+
 ```bash
 docker compose up --build
 ```
 
-API docs: http://localhost:8080/docs
+API docs:
 
-## Development
+- http://localhost:8080/docs
+
+## Local Development
+
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements-dev.txt
 make test
 make lint
 make dev
 ```
 
-## Try It
-List packs:
+## API Examples
+
+List installed packs:
+
 ```bash
 curl -s http://localhost:8080/packs | jq
 ```
 
 How-to query:
+
 ```bash
 curl -s http://localhost:8080/chat \
   -H "Content-Type: application/json" \
   -H "X-Org-Id: demo" \
   -H "X-User-Id: u1" \
   -H "X-Roles: Viewer" \
-  -d '{"message":"How do I rotate an API key in this service?"}' | jq
+  -d '{"message":"How do I rotate an API key?"}' | jq
 ```
 
 Stats query:
+
 ```bash
 curl -s http://localhost:8080/chat \
   -H "Content-Type: application/json" \
   -H "X-Org-Id: demo" \
   -H "X-User-Id: u1" \
   -H "X-Roles: Viewer" \
-  -d '{"message":"What is p95 latency last 24h?"}' | jq
+  -d '{"message":"What is p95 latency last 24h for service auth in prod?"}' | jq
 ```
 
 Security query:
+
 ```bash
 curl -s http://localhost:8080/chat \
   -H "Content-Type: application/json" \
@@ -56,72 +95,112 @@ curl -s http://localhost:8080/chat \
   -d '{"message":"What can I access?"}' | jq
 ```
 
-Inspect audit trace:
+Fetch audit events by trace id:
+
 ```bash
 curl -s http://localhost:8080/audit/<trace_id> | jq
 ```
 
-Reindex docs for an org (Admin role required):
-```bash
-curl -s http://localhost:8080/admin/reindex \
-  -H "Content-Type: application/json" \
-  -H "X-Org-Id: demo" \
-  -H "X-Roles: Admin" \
-  -d '{"pack_id":"sample_service"}' | jq
+## Example `/chat` Response Shape
+
+```json
+{
+  "answer": "### How-to\n...\n### Stats\n...",
+  "citations": [
+    { "title": "rotating_api_keys.md", "url": "data/demo/sample_service/howto/rotating_api_keys.md", "source": "sample_service docs", "score": 0.77 }
+  ],
+  "actions": [
+    { "tool": "sample.stats.request_volume_24h", "args": { "timeframe": "24h" }, "result_meta": { "duration_ms": 3, "source": "sample_service_metrics" } }
+  ],
+  "warnings": [],
+  "meta": {
+    "trace_id": "uuid",
+    "intent": "mixed",
+    "packs_used": ["sample_service"],
+    "latency_ms": 120,
+    "retrieval": { "backend": "hybrid", "alpha": 0.75, "top_k": 5 },
+    "tool_calls": 1
+  }
+}
 ```
 
-## Add Docs
-1. Add files under `data/<org_id>/<pack_id>/howto/` as `.md` or `.txt`.
-2. Ensure the pack's `doc_globs()` includes those paths.
-3. Reindex docs or issue a chat request to trigger lazy ingestion.
+## Configuration
 
-## Add Tools
-1. Implement handler functions in `packs/<pack_id>/tools.py`.
-2. Define `ToolDef` entries in `packs/<pack_id>/pack.py`.
-3. Use JSON schema args and keep `read_only=True`.
-4. Ensure connector type is one of `mock`, `http`, or `sql_readonly`.
-
-## Add a Pack
-1. Generate scaffold:
-   `python scripts/new_pack.py --pack_id mypack --display_name "My Pack"`
-2. Register `packs/mypack/pack.py` in `app/api.py`.
-3. Add docs under `data/demo/mypack/howto/`.
-4. Add tool handlers in `packs/mypack/tools.py`.
-
-## Retrieval and Embeddings Backends
 Environment variables:
-- `DOC_INDEX_BACKEND=hybrid|vector_only`
-- `DOC_INDEX_ALPHA=0.75` (hybrid only)
-- `EMBEDDING_BACKEND=hash|st`
-- `DATA_DIR=...`
-- `POLICY_PATH=...`
 
-Defaults are zero-dependency:
-- `DOC_INDEX_BACKEND=hybrid`
-- `EMBEDDING_BACKEND=hash`
+- `POLICY_PATH` (default: `config/policy.yaml`)
+- `DATA_DIR` (default: `data`)
+- `AUDIT_SINK` (`memory` or `file`)
+- `AUDIT_FILE_PATH` (used when `AUDIT_SINK=file`)
+- `DOC_INDEX_BACKEND` (`hybrid` or `vector_only`)
+- `DOC_INDEX_ALPHA` (hybrid weighting, default `0.75`)
+- `EMBEDDING_BACKEND` (`hash` or `st`)
 
-`EMBEDDING_BACKEND=st` requires `sentence-transformers` installation.
+Notes:
 
-## Run Evals
+- `EMBEDDING_BACKEND=hash` is zero-dependency and deterministic
+- `EMBEDDING_BACKEND=st` requires `sentence-transformers` installation
+
+## Add Docs, Tools, and Packs
+
+Add docs:
+
+1. Put files under `data/<org_id>/<pack_id>/howto/` (`.md` or `.txt`)
+1. Confirm pack `doc_globs()` includes the files
+1. Query `/chat` (lazy ingest) or call `/admin/reindex`
+
+Add tools:
+
+1. Implement handlers in `packs/<pack_id>/tools.py`
+1. Register `ToolDef` entries in `packs/<pack_id>/pack.py`
+1. Keep tools read-only for M1
+
+Scaffold a new pack:
+
+```bash
+python scripts/new_pack.py --pack_id mypack --display_name "My Pack"
+```
+
+Then register the new pack class in `app/api.py`.
+
+## Quality Gates
+
+Run tests:
+
+```bash
+make test
+```
+
+Run lint + type-check:
+
+```bash
+make lint
+```
+
+Run golden eval harness:
+
 ```bash
 python -m eval.run
 ```
 
-Golden files:
+Golden datasets:
+
 - `eval/howto_golden.json`
 - `eval/stats_golden.json`
 - `eval/security_golden.json`
 
-## Baseline Security Posture
-What baseline does:
-- Applies deny patterns before retrieval or tool execution.
-- Filters packs and tools by role-based allowlists.
-- Redacts emails and long identifiers in responses and audit previews.
-- Supports optional small-count suppression.
+## Baseline Security Scope
 
-What baseline does not do:
-- No enterprise authn/authz integration out of the box.
-- No secret management or key rotation automation.
-- No write-action tools in M1.
+What baseline includes:
 
-Production deployments should add stronger authentication, hardened secrets handling, network controls, and centralized audit retention.
+- Deny pattern checks before retrieval/tooling
+- RBAC allowlists for packs and tools
+- Email/long-id redaction and optional small-count suppression
+
+What baseline does not include:
+
+- Enterprise SSO/IdP integration
+- Secrets lifecycle management
+- Write-action tools
+
+For production, add stronger authn/authz, secret handling, network controls, and centralized audit retention.

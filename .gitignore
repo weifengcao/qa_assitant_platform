@@ -47,3 +47,8 @@ htmlcov/
 
 # Notebook checkpoints
 .ipynb_checkpoints/
+
+# Local-only planning docs (do not publish)
+docs/PRD.md
+docs/prd.md
+docs/task.md
