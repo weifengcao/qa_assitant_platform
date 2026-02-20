@@ -1,9 +1,10 @@
 import hashlib
-from typing import List, Protocol
+from typing import List, Protocol, runtime_checkable
 
 import numpy as np
 
 
+@runtime_checkable
 class Embedder(Protocol):
     def embed_text(self, text: str) -> np.ndarray:
         ...

@@ -46,6 +46,9 @@ class ToolDef:
             "default_args": self.default_args,
         }
 
+    def __repr__(self) -> str:
+        return f"<ToolDef name='{self.name}' read_only={self.read_only}>"
+
 
 class ToolRegistry:
     def __init__(self):

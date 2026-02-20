@@ -36,4 +36,17 @@ class FileAuditSink:
             f.write(json.dumps(event.to_dict(), ensure_ascii=True) + "\n")
 
     def get(self, trace_id: str) -> Optional[List[Dict[str, Any]]]:
-        return None
+        if not os.path.exists(self.path):
+            return None
+        events: List[Dict[str, Any]] = []
+        with open(self.path, "r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    event = json.loads(line)
+                    if event.get("trace_id") == trace_id:
+                        events.append(event)
+                except json.JSONDecodeError:
+                    pass
+        return events if events else None

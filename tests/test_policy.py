@@ -43,3 +43,27 @@ def test_filter_allowed_packs_and_tools() -> None:
 
     assert packs == ["sample_service"]
     assert tools == ["sample.stats.request_volume_24h"]
+
+
+def test_get_deny_patterns_returns_list() -> None:
+    engine = PolicyEngine(
+        {
+            "deny_patterns": ["export", "re:dump\\s+db"],
+            "roles": {},
+        }
+    )
+    patterns = engine.get_deny_patterns()
+    assert "export" in patterns
+    assert len(patterns) == 2
+
+
+def test_glob_wildcard_matches_namespaced_tool() -> None:
+    # Verify that "sample.stats.*" matches deeply namespaced names.
+    assert PolicyEngine.match_pattern("sample.stats.request_volume_24h", ["sample.stats.*"])
+    assert PolicyEngine.match_pattern("sample.stats.p95_latency_24h", ["sample.stats.*"])
+    assert not PolicyEngine.match_pattern("sample.tools.write", ["sample.stats.*"])
+
+
+def test_star_wildcard_allows_all() -> None:
+    assert PolicyEngine.match_pattern("any.tool.name", ["*"])
+    assert PolicyEngine.match_pattern("sample_service", ["*"])

@@ -20,17 +20,24 @@ make dev
 Run before opening a PR:
 
 ```bash
-make test
 make lint
+make typecheck
+make test
+make eval
 ```
 
 ## Add a New Pack
 
-1. Create a folder under `packs/<pack_id>/`.
-1. Implement a `ProductPack` class in `pack.py`.
-1. Add read-only tools in `tools.py` with JSON schema args.
-1. Add docs under `data/<org>/<pack_id>/howto/`.
-1. Register the pack in `app/api.py` startup wiring.
+Packs are the extension units of the platform.
+
+1. **Scaffold the pack**: Use the script to generate boilerplate:
+   ```bash
+   python scripts/new_pack.py --pack_id my_service --display_name "My Service"
+   ```
+2. **Implement tools**: Add read-only python functions in `packs/my_service/tools.py` and declare them with JSON Schemas in `pack.py`.
+3. **Add documentation**: Place markdown files under `data/demo/my_service/howto/` (or the corresponding org directory). Ensure heading structures are correct for better chunking.
+4. **Wire it up**: Open `app/api.py`, import your pack, and call `registry.register(MyServicePack())`.
+5. **Add tests**: Add golden tests in `eval/` datasets or unit tests.
 
 ## Pull Requests
 

@@ -14,7 +14,10 @@ def orchestrator() -> Orchestrator:
     audit = InMemoryAuditSink()
     registry = PackRegistry()
     registry.register(SampleServicePack())
-    runner = ToolRunner(tool_registry=ToolRegistry())
+    # ToolRegistry is passed to ToolRunner here; Orchestrator.__init__ calls
+    # _register_tools() which registers pack tools into this same registry.
+    tool_reg = ToolRegistry()
+    runner = ToolRunner(tool_registry=tool_reg)
     return Orchestrator(
         pack_registry=registry,
         policy_engine=policy,
@@ -28,3 +31,8 @@ def orchestrator() -> Orchestrator:
 @pytest.fixture()
 def viewer_user() -> dict:
     return {"org_id": "demo", "user_id": "u1", "roles": ["Viewer"]}
+
+
+@pytest.fixture()
+def admin_user() -> dict:
+    return {"org_id": "demo", "user_id": "admin1", "roles": ["Admin"]}

@@ -83,7 +83,7 @@ class PolicyEngine:
             redaction=redaction,
         )
 
-    def deny_patterns(self) -> List[str]:
+    def get_deny_patterns(self) -> List[str]:
         return list(self.policy.deny_patterns)
 
     def role_rules(self, role: str) -> RoleRule:

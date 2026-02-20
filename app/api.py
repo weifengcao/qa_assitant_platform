@@ -92,6 +92,13 @@ def health() -> dict[str, object]:
     }
 
 
+@app.get("/readyz")
+def readyz() -> dict[str, object]:
+    """Readiness check: confirms the doc index is available."""
+    chunk_count = doc_index.count()
+    return {"ok": True, "indexed_chunks": chunk_count}
+
+
 @app.get("/packs")
 def packs() -> dict[str, list[dict]]:
     return {"packs": registry.catalog()}
@@ -101,8 +108,6 @@ def packs() -> dict[str, list[dict]]:
 def get_audit(trace_id: str) -> dict:
     trace = audit.get(trace_id)
     if trace is None:
-        if isinstance(audit, FileAuditSink):
-            raise HTTPException(status_code=501, detail="Audit lookup not supported by file sink")
         raise HTTPException(status_code=404, detail="Trace not found")
     return {"trace_id": trace_id, "events": trace}
 

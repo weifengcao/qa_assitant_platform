@@ -1,5 +1,5 @@
 import re
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
 import numpy as np
 
@@ -12,6 +12,7 @@ def _tokenize(text: str) -> set[str]:
     return set(_TOKEN_RE.findall(text.lower()))
 
 
+@runtime_checkable
 class DocIndex(Protocol):
     def ingest(self, chunks: List[Dict[str, Any]]) -> None:
         ...

@@ -13,6 +13,10 @@ class ProductPack:
     def keywords(self) -> List[str]:
         return []
 
+    def glossary(self) -> dict[str, list[str]]:
+        """Optional synonym/glossary map for improved routing and retrieval."""
+        return {}
+
     def doc_globs(self) -> List[str]:
         """Relative globs under data/<org>/<pack>/ for ingestion."""
         return []
@@ -29,6 +33,7 @@ class ProductPack:
 
     def tools(self) -> List[ToolDef]:
         return []
+
 
 class PackRegistry:
     def __init__(self):
@@ -60,6 +65,7 @@ class PackRegistry:
                 "tools": [t.name for t in p.tools()],
             })
         return out
+
 
 def filter_packs_for_user(packs: List[ProductPack], policy: PolicyEngine, roles: List[str]) -> List[ProductPack]:
     allowed = policy.allowed_packs(roles)

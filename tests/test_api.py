@@ -64,3 +64,36 @@ def test_chat_deny_pattern_returns_warning() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert any("deny_patterns" in warning for warning in payload["warnings"])
+
+
+def test_readyz_endpoint() -> None:
+    client = TestClient(app)
+    response = client.get("/readyz")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert "indexed_chunks" in payload
+
+
+def test_admin_reindex_requires_admin_role() -> None:
+    client = TestClient(app)
+    # Viewer role should be rejected.
+    response = client.post(
+        "/admin/reindex",
+        headers={"X-Org-Id": "demo", "X-User-Id": "u1", "X-Roles": "Viewer"},
+        json={},
+    )
+    assert response.status_code == 403
+
+
+def test_admin_reindex_accepts_admin_role() -> None:
+    client = TestClient(app)
+    response = client.post(
+        "/admin/reindex",
+        headers={"X-Org-Id": "demo", "X-User-Id": "admin1", "X-Roles": "Admin"},
+        json={"pack_id": "sample_service"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["org_id"] == "demo"
+    assert "indexed_docs" in payload

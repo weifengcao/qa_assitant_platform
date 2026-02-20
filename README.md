@@ -126,7 +126,9 @@ curl -s http://localhost:8080/audit/<trace_id> | jq
 
 ## Configuration
 
-Environment variables:
+See `.env.example` for a complete list of environment variables. Copy it to `.env` to customize your local overrides.
+
+Key environment variables:
 
 - `POLICY_PATH` (default: `config/policy.yaml`)
 - `DATA_DIR` (default: `data`)
@@ -175,12 +177,13 @@ Run lint + type-check:
 
 ```bash
 make lint
+make typecheck
 ```
 
 Run golden eval harness:
 
 ```bash
-python -m eval.run
+make eval
 ```
 
 Golden datasets:

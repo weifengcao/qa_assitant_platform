@@ -7,6 +7,7 @@ class Intent(str, Enum):
     SECURITY = "security"
     MIXED = "mixed"
 
+
 def classify_intent(message: str) -> Intent:
     m = message.lower()
     how = any(k in m for k in ["how do i", "how to", "configure", "set up", "setup", "guide", "steps"])

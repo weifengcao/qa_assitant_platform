@@ -23,6 +23,7 @@ def stats_request_volume_24h(args: Dict[str, Any]) -> Dict[str, Any]:
         "source": "sample_service_metrics",
     }
 
+
 def stats_p95_latency_24h(args: Dict[str, Any]) -> Dict[str, Any]:
     now = datetime.now(timezone.utc).isoformat()
     timeframe = args.get("timeframe", "24h")
