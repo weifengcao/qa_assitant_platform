@@ -1,5 +1,7 @@
 # Universal Q&A Assistant Platform (OSS Baseline)
 
+> **An open-source, extensible chat API that answers questions using your own documents and safely executes read-only tools against your infrastructure.**
+
 Build a production-style assistant that is **pack-based**, **self-hostable**, and centered on three pillars:
 
 - **How-to**: doc-grounded answers with citations (RAG)
@@ -7,6 +9,18 @@ Build a production-style assistant that is **pack-based**, **self-hostable**, an
 - **Security**: RBAC, deny patterns, and output redaction by default
 
 This repo is designed as an OSS baseline that runs without external proprietary services.
+
+## Documentation Directory
+
+Explore the full documentation:
+- [Architecture & Design](docs/architecture.md) — internal component flow and sequence diagrams.
+- [Changelog](CHANGELOG.md) — version history and new features.
+- [Contributing](CONTRIBUTING.md) — how to run tests, linters, and submit PRs.
+- [Security](SECURITY.md) — threat model assumptions and vulnerability reporting.
+
+## What is a Pack?
+
+A **Pack** is a plugin folder containing your custom product documentation (Markdown) and tool handler functions (Python). The orchestrator dynamically routes user questions to the correct pack based on keywords and RBAC allowances.
 
 ## Why This Repo
 
@@ -30,6 +44,12 @@ This repo is designed as an OSS baseline that runs without external proprietary 
 - Retrieval: chunking + embedding + in-memory index backends
 - Tools: registry + connectors (`mock`, `http` stub, `sql_readonly` stub)
 - Security: RBAC filtering, deny rules, and redaction pass
+
+## Prerequisites
+
+- **Python 3.10+** (if running locally)
+- **Docker** & **Docker Compose** (for containerized deployment)
+- **Make** (for developer workflow commands)
 
 ## Quickstart
 
